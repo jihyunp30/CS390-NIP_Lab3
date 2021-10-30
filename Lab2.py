@@ -10,6 +10,10 @@ from tensorflow.keras.applications import vgg19
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import warnings
 
+from PIL import Image
+#from scipy.misc import imsave, imresize
+#from scipy.misc.pilutil import imread
+
 tf.compat.v1.disable_eager_execution()
 
 random.seed(1618)
@@ -20,8 +24,8 @@ tf.random.set_seed(1618)
 # tf.logging.set_verbosity(tf.logging.ERROR)   # Uncomment for TF1.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-CONTENT_IMG_PATH = "/content/drive/MyDrive/Colab Notebooks/content.jpg"  # TODO: Add this.
-STYLE_IMG_PATH = "/content/drive/MyDrive/Colab Notebooks/the_persistence_of_memory.jpg"  # TODO: Add this.
+CONTENT_IMG_PATH = "content.jpg"  # TODO: Add this.
+STYLE_IMG_PATH = "the_persistence_of_memory.jpg"  # TODO: Add this.
 
 CONTENT_IMG_H = 500
 CONTENT_IMG_W = 500
@@ -44,8 +48,14 @@ This function should take the tensor and re-convert it to an image.
 '''
 
 
-def deprocessImage(img):
-    return img
+def deprocessImage(x):
+    x[:, :, 0] += 103.939
+    x[:, :, 1] += 116.779
+    x[:, :, 2] += 123.68
+    # 'BGR'->'RGB'
+    x = x[:, :, ::-1]
+    x = np.clip(x, 0, 255).astype('uint8')
+    return x
 
 
 def gramMatrix(x):
@@ -58,7 +68,7 @@ def gramMatrix(x):
 
 def styleLoss(style, gen):
     return K.sum(K.square(gramMatrix(style) - gramMatrix(gen))) / (
-                4. * (numFilters ^ 2) * ((STYLE_IMG_H * STYLE_IMG_W) ^ 2))  # TODO: implement.
+                4. * (numFilters**2) * ((STYLE_IMG_H * STYLE_IMG_W)**2))  # TODO: implement.
 
 
 def contentLoss(content, gen):
@@ -132,27 +142,39 @@ def styleTransfer(cData, sData, tData):
     print("   Calculating style loss.")
     for layerName in styleLayerNames:
         styleLayer = outputDict[layerName]
-        styleOutput = styleLayer[0, :, :, :]
+        styleOutput = styleLayer[1, :, :, :]
         styleGen = styleLayer[2, :, :, :]
         sLoss = styleLoss(styleOutput, styleGen)
         loss += (STYLE_WEIGHT / len(styleLayerNames)) * sLoss  # TODO: implement.
     loss += TOTAL_WEIGHT * totalLoss(genTensor)  # TODO: implement.
     # TODO: Setup gradients or use K.gradients().
-    grads = K.gradients(loss, genTensor)
-    outputs = [loss]
-    outputs = outputs + grads
+    grads = K.gradients(loss, genTensor)[0]
+    #outputs = [loss]
+    #outputs = outputs + grads
 
     x = tData
-    kFunction = K.function([genTensor], outputs)
+    x = x.flatten()
+    kFunction = K.function([genTensor], [loss, grads])
 
     class Test:
+        def __init__(self):
+            self.loss = None
+            self.grad = None
+
         def transferLoss(self, x):
-            outs = kFunction(x.reshape(genTensor.shape))
-            self._outs = outs
-            return outs[0]
+            x = x.reshape(genTensor.shape)
+            outs = kFunction([x])
+            transLoss = outs[0]
+            grad = outs[1].flatten().astype('float64')
+            self.loss = transLoss
+            self.grad = grad
+            return self.loss
 
         def gradFunction(self, x):
-            return self._outs[1]
+            grad = np.copy(self.grad)
+            self.loss = None
+            grad = None
+            return self.grad
 
     test = Test()
 
@@ -162,9 +184,11 @@ def styleTransfer(cData, sData, tData):
         # TODO: perform gradient descent using fmin_l_bfgs_b.
         x, tLoss, d = fmin_l_bfgs_b(test.transferLoss, x, fprime=test.gradFunction, maxiter=20)
         print("      Loss: %f." % tLoss)
-        img = deprocessImage(x)
-        saveFile = "/content/drive/MyDrive/Colab Notebooks/output.jpg"  # TODO: Implement.
-        # imsave(saveFile, img)   #Uncomment when everything is working right.
+        img = x.copy().reshape((CONTENT_IMG_H, CONTENT_IMG_W, 3))
+        img = deprocessImage(img)
+        saveFile = "output" + str(i) + ".jpg"  # TODO: Implement.
+        Image.fromarray(img).save(saveFile)   #Uncomment when everything is working right.
+        #imsave(saveFile, img)
         print("      Image saved to \"%s\"." % saveFile)
     print("   Transfer complete.")
 
