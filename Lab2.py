@@ -11,8 +11,10 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import warnings
 
 from PIL import Image
-#from scipy.misc import imsave, imresize
-#from scipy.misc.pilutil import imread
+
+#Reference
+#https://keras.io/examples/generative/neural_style_transfer/
+#https://medium.com/@sean_miller/style-transfer-using-pre-trained-networks-47272a186fb2
 
 tf.compat.v1.disable_eager_execution()
 
